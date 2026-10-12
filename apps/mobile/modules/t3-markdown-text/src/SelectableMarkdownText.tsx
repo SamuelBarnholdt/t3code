@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { View } from "react-native";
 import { parseMarkdownWithOptions } from "react-native-nitro-markdown/headless";
+import { parseNativeMarkdownMath } from "./nativeMarkdownMath";
 
 import {
   nativeMarkdownWithHtml,
@@ -23,6 +24,7 @@ import type {
 } from "./SelectableMarkdownText.types";
 
 const EMPTY_SKILLS: ReadonlyArray<SelectableMarkdownSkill> = [];
+export const MarkdownMathEnabledContext = createContext(false);
 
 export type {
   MarkdownCodeHighlighter,
@@ -52,11 +54,20 @@ export function SelectableMarkdownText({
   marginTop = 0,
   marginBottom = 0,
 }: SelectableMarkdownTextProps) {
+  const mathEnabled = useContext(MarkdownMathEnabledContext);
   const chunks = useMemo(() => {
+    const parse = (source: string) =>
+      parseMarkdownWithOptions(source, { gfm: true, html: true, math: false });
     const parsedDocument = nativeMarkdownWithAuthoredWindowsPaths(
       nativeMarkdownWithHtml(
-        parseMarkdownWithOptions(markdown, { gfm: true, html: true, math: false }),
-        (content) => parseMarkdownWithOptions(content, { gfm: true, html: false, math: false }),
+        mathEnabled ? parseNativeMarkdownMath(markdown, parse) : parse(markdown),
+        (content) => {
+          const parseHtmlText = (source: string) =>
+            parseMarkdownWithOptions(source, { gfm: true, html: false, math: false });
+          return mathEnabled
+            ? parseNativeMarkdownMath(content, parseHtmlText)
+            : parseHtmlText(content);
+        },
       ),
       markdown,
     );
@@ -71,7 +82,7 @@ export function SelectableMarkdownText({
           }
         : chunk,
     );
-  }, [markdown, preserveSoftBreaks, skills]);
+  }, [markdown, preserveSoftBreaks, skills, mathEnabled]);
 
   const fileContextMenuHandlers = useMemo<MarkdownFileContextMenuHandlers | null>(
     () =>

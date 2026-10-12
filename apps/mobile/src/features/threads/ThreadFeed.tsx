@@ -1553,6 +1553,7 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly themeAppearance: "light" | "dark";
     readonly usesNativeWorkspaceColumns: boolean;
+    readonly mathRenderingEnabled: boolean;
     readonly userBubbleMaxWidth: number;
     /** Width assistant markdown lays out in, so images can size their frame before layout. */
     readonly markdownContentWidth: number;
@@ -1695,7 +1696,10 @@ function renderFeedEntry(
     // children during the unclamped pass and never moves them once the width
     // is clamped, so the paragraphs around the block end up drawn on top of
     // each other. Pinning the width removes that pass.
-    const hasWideBlock = hasWideMarkdownBlock(renderedText, WIDE_MARKDOWN_BLOCK_OPTIONS);
+    const hasWideBlock = hasWideMarkdownBlock(renderedText, {
+      ...WIDE_MARKDOWN_BLOCK_OPTIONS,
+      includeMath: props.mathRenderingEnabled,
+    });
     const assistantTurnStillInProgress =
       message.role === "assistant" &&
       props.unsettledTurnId !== null &&
@@ -2221,7 +2225,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const userScrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerMaterialVisibleRef = useRef(false);
   const { width: windowWidth, fontScale } = useWindowDimensions();
-  const { appearance } = useAppearancePreferences();
+  const { appearance, mathRenderingEnabled } = useAppearancePreferences();
   const workRowSizing = useMemo(
     () => deriveThreadWorkLogSizing({ baseFontSize: appearance.baseFontSize, fontScale }),
     [appearance.baseFontSize, fontScale],
@@ -3076,6 +3080,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               reviewCommentBubbleWidth,
               themeAppearance,
               usesNativeWorkspaceColumns,
+              mathRenderingEnabled,
               userBubbleMaxWidth,
               markdownContentWidth,
               contentWidth,
@@ -3115,6 +3120,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       reviewCommentBubbleWidth,
       themeAppearance,
       usesNativeWorkspaceColumns,
+      mathRenderingEnabled,
       userBubbleMaxWidth,
       markdownContentWidth,
       contentWidth,

@@ -22,6 +22,7 @@
  * code out of the heuristic while covering nested lists.
  */
 
+import { markdownMathRanges } from "@t3tools/shared/markdownMath";
 const FENCED_CODE_BLOCK = /^ {0,3}(?:```|~~~)/m;
 // Trades some precision for a simple check, favoring false positives over false
 // negatives: list-shaped paragraph may get a wider bubble
@@ -31,6 +32,7 @@ const ANY_LIST_ITEM = /^( *)(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)/;
 const BLOCKQUOTE_PREFIX = /^ {0,3}>[ \t]?/;
 
 export interface WideMarkdownBlockOptions {
+  readonly includeMath?: boolean;
   readonly includeOrderedLists?: boolean;
   readonly includeBlockquotes?: boolean;
 }
@@ -109,6 +111,7 @@ export function hasWideMarkdownBlock(
   text: string,
   options: WideMarkdownBlockOptions = {},
 ): boolean {
+  if (options.includeMath && markdownMathRanges(text).length > 0) return true;
   if (FENCED_CODE_BLOCK.test(text)) {
     return true;
   }

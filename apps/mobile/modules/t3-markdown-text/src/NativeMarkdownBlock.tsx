@@ -11,7 +11,12 @@ import {
   nativeMarkdownListItemBlocks,
   nativeMarkdownNodePosition,
 } from "./nativeMarkdownText";
-import { NativeMarkdownSelectableText } from "./NativeMarkdownSelectableText";
+import {
+  NativeMarkdownSelectableText,
+  MarkdownFileContextMenuContext,
+  MarkdownContextClipboardContext,
+} from "./NativeMarkdownSelectableText";
+import { NativeMathText } from "./NativeMathText";
 import type {
   MarkdownCodeHighlighter,
   MarkdownHighlightedToken,
@@ -244,8 +249,20 @@ function NativeTable(props: {
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
 }) {
-  const rows = collectTableRows(props.node);
-  return (
+  const menu = useContext(MarkdownFileContextMenuContext);
+  const contextClipboardFragment = useContext(MarkdownContextClipboardContext);
+  const { rows, cells, runs } = useMemo(() => {
+    const rows = collectTableRows(props.node);
+    const cells = rows.map((row, index) =>
+      (row.children ?? []).map((cell) =>
+        nativeMarkdownDocumentRuns(documentFor(cell), props.skills).map((run) =>
+          index === 0 || cell.isHeader ? { ...run, bold: true } : run,
+        ),
+      ),
+    );
+    return { rows, cells, runs: cells.flat(2) };
+  }, [props.node, props.skills]);
+  const nativeTable = (
     <ScrollView
       horizontal
       bounces={false}
@@ -283,9 +300,8 @@ function NativeTable(props: {
                 }}
               >
                 <NativeMarkdownSelectableText
-                  runs={nativeMarkdownDocumentRuns(documentFor(cell), props.skills).map((run) =>
-                    rowIndex === 0 || cell.isHeader ? { ...run, bold: true } : run,
-                  )}
+                  runs={cells[rowIndex]?.[cellIndex] ?? []}
+                  renderMath={false}
                   textStyle={props.textStyle}
                   onLinkPress={props.onLinkPress}
                 />
@@ -295,6 +311,19 @@ function NativeTable(props: {
         ))}
       </View>
     </ScrollView>
+  );
+  return runs.some((run) => run.mathSource) ? (
+    <NativeMathText
+      runs={runs}
+      table={cells}
+      textStyle={props.textStyle}
+      onLinkPress={props.onLinkPress}
+      {...(menu ?? {})}
+      contextClipboardFragment={contextClipboardFragment}
+      fallback={nativeTable}
+    />
+  ) : (
+    nativeTable
   );
 }
 
@@ -636,12 +665,6 @@ export function NativeMarkdownBlock(props: {
         <View
           style={{
             marginVertical: props.compact ? 2 : 0,
-            paddingHorizontal: props.node.type === "math_block" ? 10 : 0,
-            paddingVertical: props.node.type === "math_block" ? 8 : 0,
-            backgroundColor:
-              props.node.type === "math_block"
-                ? props.textStyle.codeBackgroundColor
-                : "transparent",
           }}
         >
           <SelectableNode

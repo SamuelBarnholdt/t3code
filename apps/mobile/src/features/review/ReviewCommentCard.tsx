@@ -17,6 +17,11 @@ import { buildReviewParsedDiff } from "./reviewModel";
 import { REVIEW_MONO_FONT_FAMILY } from "./reviewDiffRendering";
 import type { ReviewInlineComment } from "./reviewCommentSelection";
 import { useMarkdownCodeHighlight } from "../threads/markdownCodeHighlightState";
+import {
+  hasNativeSelectableMarkdownText,
+  SelectableMarkdownText,
+} from "../../native/SelectableMarkdownText";
+import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 
 export interface ReviewCommentColors {
   readonly background: ColorValue;
@@ -50,6 +55,7 @@ export const ReviewCommentCard = memo(function ReviewCommentCard(props: {
   const { codeSurface, nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { themeAppearance: appearanceScheme, themeId } = useAppearancePreferences();
   const appTheme = useUniwindTheme();
+  const markdownStyles = useMarkdownPreviewStyles();
   const [NativeReviewDiffView] = useState(() => resolveNativeReviewDiffView());
   const patch = useMemo(() => buildReviewCommentPatch(props.comment), [props.comment]);
   const parsedDiff = useMemo(
@@ -167,9 +173,21 @@ export const ReviewCommentCard = memo(function ReviewCommentCard(props: {
       </View>
       {props.comment.text.length > 0 ? (
         <View className="px-3 py-3">
-          <Text selectable className="text-base leading-snug" style={{ color: props.colors.text }}>
-            {props.comment.text}
-          </Text>
+          {hasNativeSelectableMarkdownText() ? (
+            <SelectableMarkdownText
+              markdown={props.comment.text}
+              textStyle={markdownStyles.nativeTextStyle}
+              preserveSoftBreaks
+            />
+          ) : (
+            <Text
+              selectable
+              className="text-base leading-snug"
+              style={{ color: props.colors.text }}
+            >
+              {props.comment.text}
+            </Text>
+          )}
         </View>
       ) : null}
       {shouldRenderNativeDiff ? (

@@ -28,17 +28,22 @@
     "./renderer": "./src/SelectableMarkdownText.tsx",
     "./types": "./src/SelectableMarkdownText.types.ts"
   },
+  "dependencies": {
+    "mathjax-full": "^3.2.2"
+  },
   "peerDependencies": {
     "@t3tools/client-runtime": "*",
     "@t3tools/shared": "*",
     "expo": "*",
     "expo-asset": "*",
     "expo-clipboard": "*",
+    "expo-file-system": "*",
     "expo-haptics": "*",
     "expo-symbols": "*",
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-markdown": "*"
+    "react-native-nitro-markdown": "*",
+    "react-native-webview": "*"
   },
   "codegenConfig": {
     "name": "T3MarkdownTextSpec",

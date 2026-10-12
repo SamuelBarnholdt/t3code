@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppState, Appearance, Platform, useColorScheme } from "react-native";
+import { MarkdownMathEnabledContext } from "@t3tools/mobile-markdown-text/renderer";
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -71,6 +72,8 @@ interface AppearancePreferencesContextValue {
   /** Pass null to clear the override and follow the base font size. */
   readonly setCodeFontSize: (value: number | null) => void;
   readonly setCodeWordBreak: (value: boolean) => void;
+  readonly mathRenderingEnabled: boolean;
+  readonly setMathRenderingEnabled: (value: boolean) => void;
 }
 
 const AppearancePreferencesContext = createContext<AppearancePreferencesContextValue | null>(null);
@@ -272,6 +275,14 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [updatePreferences],
   );
 
+  const mathRenderingEnabled = storedPreferences?.mathRenderingEnabled === true;
+  const setMathRenderingEnabled = useCallback(
+    (value: boolean) => {
+      updatePreferences({ mathRenderingEnabled: value });
+    },
+    [updatePreferences],
+  );
+
   const value = useMemo(
     (): AppearancePreferencesContextValue => ({
       appearance,
@@ -292,6 +303,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      mathRenderingEnabled,
+      setMathRenderingEnabled,
     }),
     [
       appearance,
@@ -311,14 +324,18 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      mathRenderingEnabled,
+      setMathRenderingEnabled,
     ],
   );
 
   return (
     <AppearancePreferencesContext.Provider value={value}>
-      <ScopedTheme theme={activeThemeName}>
-        <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
-      </ScopedTheme>
+      <MarkdownMathEnabledContext.Provider value={mathRenderingEnabled}>
+        <ScopedTheme theme={activeThemeName}>
+          <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
+        </ScopedTheme>
+      </MarkdownMathEnabledContext.Provider>
     </AppearancePreferencesContext.Provider>
   );
 }

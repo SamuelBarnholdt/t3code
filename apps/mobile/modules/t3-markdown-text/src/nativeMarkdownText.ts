@@ -148,6 +148,9 @@ import {
 } from "./markdownLinks";
 
 export interface NativeMarkdownTextRun {
+  readonly mathSource?: string;
+  readonly mathTex?: string;
+  readonly mathDisplay?: boolean;
   readonly text: string;
   readonly bold?: boolean;
   readonly italic?: boolean;
@@ -190,6 +193,9 @@ export type NativeMarkdownDocumentChunk =
     };
 
 interface RunContext {
+  readonly mathSource?: string;
+  readonly mathTex?: string;
+  readonly mathDisplay?: boolean;
   readonly bold: boolean;
   readonly italic: boolean;
   readonly strikethrough: boolean;
@@ -286,6 +292,7 @@ function sameRunStyle(left: NativeMarkdownTextRun, right: NativeMarkdownTextRun)
     left.externalHost === right.externalHost &&
     left.fileIcon === right.fileIcon &&
     left.sourceText === right.sourceText &&
+    left.mathSource === right.mathSource &&
     left.skillName === right.skillName &&
     left.skillLabel === right.skillLabel &&
     left.role === right.role &&
@@ -309,6 +316,10 @@ function appendRun(
 
   const run: NativeMarkdownTextRun = {
     text,
+    ...(context.mathSource ? { mathSource: context.mathSource } : {}),
+    ...(context.mathTex !== undefined
+      ? { mathTex: context.mathTex, mathDisplay: context.mathDisplay }
+      : {}),
     ...(context.bold ? { bold: true } : {}),
     ...(context.italic ? { italic: true } : {}),
     ...(context.strikethrough ? { strikethrough: true } : {}),
@@ -330,7 +341,7 @@ function appendRun(
       : {}),
   };
   const previous = runs.at(-1);
-  if (previous && sameRunStyle(previous, run)) {
+  if (previous && !context.mathSource && sameRunStyle(previous, run)) {
     runs[runs.length - 1] = { ...previous, text: previous.text + run.text };
     return runs;
   }
@@ -488,8 +499,21 @@ function appendNode(
 ): NativeMarkdownTextRun[] {
   switch (node.type) {
     case "text":
-    case "math_inline":
       return appendRun(runs, textNodeContent(nodeTextContent(node)), context);
+    case "math_inline":
+    case "math_block": {
+      const source =
+        "mathSource" in node && typeof node.mathSource === "string"
+          ? node.mathSource
+          : `\\(${nodeTextContent(node)}\\)`;
+      return appendRun(runs, source, {
+        ...context,
+        mathSource: source,
+        sourceText: source,
+        mathTex: nodeTextContent(node),
+        mathDisplay: node.type === "math_block",
+      });
+    }
     case "html_inline":
       return appendRun(runs, inlineHtmlText(nodeTextContent(node)), context);
     case "code_inline": {
@@ -936,7 +960,7 @@ function appendDocumentBlock(
       });
       return appendBlockTerminator(runs, { ...EMPTY_CONTEXT, role: "body", depth });
     case "math_block":
-      appendRun(runs, nodeTextContent(node), { ...EMPTY_CONTEXT, role: "body", depth });
+      appendNode(runs, node, { ...EMPTY_CONTEXT, role: "body", depth });
       return appendBlockTerminator(runs, { ...EMPTY_CONTEXT, role: "body", depth });
     default:
       appendInlineChildren(runs, node, { ...EMPTY_CONTEXT, role: "body", depth });
@@ -945,6 +969,15 @@ function appendDocumentBlock(
 }
 
 function containsRichBlock(node: MarkdownNode): boolean {
+  // Native list rows own their marker columns and hanging indents. Keep those
+  // containers when a paragraph needs the embedded math renderer.
+  if (node.type === "list") {
+    const hasMath = (child: MarkdownNode): boolean =>
+      child.type === "math_inline" ||
+      child.type === "math_block" ||
+      (child.children ?? []).some(hasMath);
+    if (hasMath(node)) return true;
+  }
   if (
     node.type === "code_block" ||
     node.type === "blockquote" ||

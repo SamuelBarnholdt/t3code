@@ -3,6 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { hasWideMarkdownBlock } from "./wideMarkdownBlocks";
 
 describe("hasWideMarkdownBlock", () => {
+  it("gives rendered math a constrained bubble width without treating prices as math", () => {
+    expect(hasWideMarkdownBlock("before $x_i$ after")).toBe(false);
+    expect(hasWideMarkdownBlock("before $x_i$ after", { includeMath: true })).toBe(true);
+    expect(hasWideMarkdownBlock("Price $5-$10", { includeMath: true })).toBe(false);
+    expect(hasWideMarkdownBlock("`$x_i$`", { includeMath: true })).toBe(false);
+    expect(hasWideMarkdownBlock("unclosed $x_i", { includeMath: true })).toBe(false);
+  });
   it("ignores prose, inline code, and emphasis", () => {
     expect(hasWideMarkdownBlock("just a message")).toBe(false);
     expect(hasWideMarkdownBlock("I found it in `secteurs_intervention` earlier")).toBe(false);

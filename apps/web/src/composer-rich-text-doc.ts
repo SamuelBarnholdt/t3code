@@ -21,6 +21,7 @@ import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
 import { nextOrderedMarkerText } from "~/composer-list-continuation";
 import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
+import { markdownMathRanges } from "@t3tools/shared/markdownMath";
 
 /**
  * Pure document model for the rich text (Tiptap) composer.
@@ -542,7 +543,13 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
 export function buildTiptapContent(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
-  options?: { styling?: boolean; blocks?: boolean; literalText?: boolean; literalLength?: number },
+  options?: {
+    styling?: boolean;
+    blocks?: boolean;
+    literalText?: boolean;
+    literalLength?: number;
+    math?: boolean;
+  },
 ): Record<string, unknown>[] {
   // Editor answers are verbatim text, including Markdown and context-token sources.
   if (options?.literalText) {
@@ -566,12 +573,38 @@ export function buildTiptapContent(
   // place of the sentinel rather than building an atom for it.
   const atomSources: string[] = [];
   const literal = value.slice(0, options?.literalLength ?? 0);
-  const text = splitPromptIntoComposerSegments(value.slice(literal.length))
-    .map((segment) => {
-      if (segment.type === "text") return segment.text;
-      atoms.push(atomJsonForSegment(segment, skillLabelFor));
-      atomSources.push(segment.source);
-      return sentinel;
+  const remainder = value.slice(literal.length);
+  const formulas = styling && options?.math ? markdownMathRanges(remainder) : [];
+  let mathOffset = 0;
+  const chunks: Array<{ text: string } | { math: (typeof formulas)[number] }> = [];
+  for (const math of formulas) {
+    chunks.push({ text: remainder.slice(mathOffset, math.start) }, { math });
+    mathOffset = math.end;
+  }
+  chunks.push({ text: remainder.slice(mathOffset) });
+  const text = chunks
+    .map((chunk) => {
+      if ("math" in chunk) {
+        atoms.push({
+          type: "composer-math",
+          attrs: {
+            source: chunk.math.source,
+            tex: chunk.math.tex,
+            display: chunk.math.display,
+            inTable: chunk.math.inTable,
+          },
+        });
+        atomSources.push(chunk.math.source);
+        return sentinel;
+      }
+      return splitPromptIntoComposerSegments(chunk.text)
+        .map((segment) => {
+          if (segment.type === "text") return segment.text;
+          atoms.push(atomJsonForSegment(segment, skillLabelFor));
+          atomSources.push(segment.source);
+          return sentinel;
+        })
+        .join("");
     })
     .join("");
   let atomIndex = 0;
@@ -780,7 +813,7 @@ export function buildTiptapContent(
 export function buildDocJson(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
-  options?: { styling?: boolean; literalText?: boolean },
+  options?: { styling?: boolean; literalText?: boolean; math?: boolean },
 ) {
   const content = buildTiptapContent(value, skillLabelFor, options);
   // The empty line the rule extension keeps after a final rule.
@@ -820,6 +853,7 @@ function readAtomSource(node: ProseMirrorNode): string {
     case "composer-mention":
     case "composer-citation":
     case "composer-context-reference":
+    case "composer-math":
       return typeof attrs.source === "string" ? attrs.source : "";
     case "composer-skill": {
       const name = typeof attrs.skillName === "string" ? attrs.skillName : "";
@@ -969,7 +1003,10 @@ function appendInlineRuns(
     const source = child.isText ? child.text! : readAtomSource(child);
     const docLen = child.isText ? source.length : 1;
     const mdText = open + source + close;
-    const collapsedLen = open.length + docLen + close.length;
+    // Math is one editor atom, but its source remains ordinary text in the
+    // draft store's cursor space. Only context chips collapse there.
+    const collapsedLen =
+      open.length + (child.type.name === "composer-math" ? source.length : docLen) + close.length;
     acc.runs.push({
       kind: child.isText ? "text" : "token",
       flatStart: acc.flat,
@@ -1424,6 +1461,47 @@ export function serializeEditorDoc(doc: ProseMirrorNode): RichDocMap {
     docLength: acc.flat,
     contextIds: Array.from(new Set(collectInlineContextIds(acc.value))),
   };
+}
+
+/** Complete formulas can span paragraphs or existing context atoms while typing.
+ * Convert them in one transaction and keep the draft's source and selection. */
+export function materializeComposerMath(
+  state: EditorState,
+  skillLabelFor: (name: string) => SkillMeta,
+) {
+  const map = serializeEditorDoc(state.doc);
+  const formulas = markdownMathRanges(map.value);
+  const existing = new Set(
+    map.runs
+      .filter((run) => run.nodeName === "composer-math")
+      .map((run) => run.mdStart + run.openLen),
+  );
+  const caret = flatToMarkdown(map, pmToFlat(map, state.selection.from));
+  if (
+    !formulas.some(
+      (formula) =>
+        !existing.has(formula.start) &&
+        !(
+          formula.source.startsWith("$") &&
+          !formula.source.startsWith("$$") &&
+          formula.end === caret
+        ),
+    )
+  )
+    return null;
+  const from = flatToCollapsed(map, pmToFlat(map, state.selection.from));
+  const to = flatToCollapsed(map, pmToFlat(map, state.selection.to));
+  const doc = state.schema.nodeFromJSON(buildDocJson(map.value, skillLabelFor, { math: true }));
+  if (doc.eq(state.doc)) return null;
+  const next = serializeEditorDoc(doc);
+  const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content);
+  return tr.setSelection(
+    TextSelection.create(
+      tr.doc,
+      flatToPm(next, collapsedToFlat(next, from)),
+      flatToPm(next, collapsedToFlat(next, to)),
+    ),
+  );
 }
 
 function lastRunEnd(map: RichDocMap, space: "collapsed" | "md"): number {
