@@ -7,7 +7,6 @@ import { splitBlockKeepMarks } from "@tiptap/pm/commands";
 import { describe, expect, it } from "vite-plus/test";
 
 import { collapseExpandedComposerCursor, pastedPathQueryLength } from "./composer-logic";
-import { ComposerMathExtension } from "./composer-math";
 
 import {
   buildDocJson,
@@ -21,7 +20,6 @@ import {
   ComposerTaskItemExtension,
   flatToCollapsed,
   flatToMarkdown,
-  materializeComposerMath,
   flatToPm,
   pmToFlat,
   serializeEditorDoc,
@@ -55,7 +53,6 @@ const schema = getSchemaByResolvedExtensions(
       code: false,
     }),
     ComposerCodeExtension,
-    ComposerMathExtension,
     stubAtom("composer-mention", { path: { default: "" }, source: { default: "" } }),
     stubAtom("composer-skill", {
       skillName: { default: "" },
@@ -89,103 +86,38 @@ function roundTrip(value: string) {
   return serializeEditorDoc(doc);
 }
 
-describe("composer math source and selections", () => {
-  const build = (source: string) => {
-    const doc = schema.nodeFromJSON(
-      buildDocJson(source, (name) => ({ label: name, description: null }), { math: true }),
-    );
-    doc.check();
-    return doc;
-  };
-
+describe("editable math source", () => {
   it.each([
     "Area $x_i^2$ after",
     "before \\(\\frac{1}{2}\\) after",
     "before $$x^2$$ after",
     "\\[\nx = 1\ny = 2\n\\]",
-    "\\[\\text{use $browser then @README.md}\\]",
+    "\\[\\text{use $browser then @README.md and **literal**}\\]",
     "```math\nx_i + y_i\n```",
     "- **use** $x_i$ then @README.md",
     "| Name | Formula |\n| --- | --- |\n| Norm | $|x|$ |",
     "| Name | Formula |\n| --- | --- |\n| Norm | \\(\\|x\\|\\) |",
-  ])("round trips authored TeX without parsing its markers: %s", (source) => {
-    const doc = build(source);
-    const map = serializeEditorDoc(doc);
+  ])("keeps TeX editable and round trips its source: %s", (source) => {
+    const map = roundTrip(source);
     expect(map.value).toBe(source);
-    expect(map.runs.some((run) => run.nodeName === "composer-math")).toBe(true);
-    expect(serializeSelection(doc, 1, doc.content.size - 1)).toBe(source);
-  });
-
-  it("keeps native draft offsets expanded for formulas while context chips stay collapsed", () => {
-    const source = "before $x_i$ after";
-    const map = serializeEditorDoc(build(source));
-    const math = map.runs.find((run) => run.nodeName === "composer-math")!;
-    expect(flatToCollapsed(map, math.flatStart + 1)).toBe("before $x_i$".length);
-    expect(flatToMarkdown(map, math.flatStart + 1)).toBe("before $x_i$".length);
-    expect(collapsedToFlat(map, "before $x_i$".length)).toBe(math.flatStart + 1);
-    expect(map.contextIds).toEqual([]);
-    const withTokens = "\\[\\text{use $browser then @README.md}\\] after";
-    const tokenMap = serializeEditorDoc(build(withTokens));
-    expect(collapseExpandedComposerCursor(withTokens, withTokens.length)).toBe(withTokens.length);
-    expect(flatToCollapsed(tokenMap, tokenMap.docLength)).toBe(withTokens.length);
-  });
-
-  it("replaces an edited atom's source without changing its neighbors", () => {
-    const doc = build("before $x_i$ after");
-    const map = serializeEditorDoc(doc);
-    const math = map.runs.find((run) => run.nodeName === "composer-math")!;
-    const state = EditorState.create({ doc });
-    const next = state.apply(
-      state.tr.setNodeMarkup(math.pmPos, undefined, {
-        source: "\\(y^2\\)",
-        tex: "y^2",
-        display: false,
-      }),
-    );
-    expect(serializeEditorDoc(next.doc).value).toBe("before \\(y^2\\) after");
-  });
-
-  it.each(["Cost $5-$10", "Cost $5 and $10", "Unclosed $x_i", "`$x_i$`", "```js\n$x_i$\n```"])(
-    "leaves literal text and code alone: %s",
-    (source) => {
-      const map = serializeEditorDoc(build(source));
-      expect(map.value).toBe(source);
-      expect(map.runs.some((run) => run.nodeName === "composer-math")).toBe(false);
-    },
-  );
-
-  it("converts a completed multiline draft and retains the caret after it", () => {
-    const source = "before\n\\[\nx = 1\n\\]\nend";
+    expect(map.runs.some((run) => run.nodeName === "composer-math")).toBe(false);
     const doc = schema.nodeFromJSON(
       buildDocJson(source, (name) => ({ label: name, description: null })),
     );
-    const state = EditorState.create({ doc, selection: TextSelection.atEnd(doc) });
-    const tr = materializeComposerMath(state, (name) => ({ label: name, description: null }));
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
-    expect(serializeEditorDoc(next.doc).value).toBe(source);
-    expect(next.selection.eq(TextSelection.atEnd(next.doc))).toBe(true);
-    expect(
-      materializeComposerMath(next, (name) => ({ label: name, description: null })),
-    ).toBeNull();
+    expect(serializeSelection(doc, 1, doc.content.size - 1)).toBe(source);
   });
 
-  it("converts a completed formula that contains a previously typed context atom", () => {
-    const doc = schema.node("doc", null, [
-      schema.node("paragraph", null, [
-        schema.text("\\(\\text{see "),
-        schema.nodes["composer-mention"]!.create({ path: "README.md", source: "@README.md" }),
-        schema.text(" here}\\)"),
-      ]),
-    ]);
-    const source = "\\(\\text{see @README.md here}\\)";
-    const state = EditorState.create({ doc, selection: TextSelection.atEnd(doc) });
-    const tr = materializeComposerMath(state, (name) => ({ label: name, description: null }));
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
-    expect(next.doc.firstChild?.firstChild?.type.name).toBe("composer-math");
-    expect(serializeEditorDoc(next.doc).value).toBe(source);
-    expect(next.selection.eq(TextSelection.atEnd(next.doc))).toBe(true);
+  it("edits a command character directly without replacing a formula node", () => {
+    const source = "before \\(\\frac{a}{b}\\) after";
+    const doc = schema.nodeFromJSON(
+      buildDocJson(source, (name) => ({ label: name, description: null })),
+    );
+    const map = serializeEditorDoc(doc);
+    const offset = source.indexOf("{a}") + 1;
+    const position = flatToPm(map, offset);
+    const state = EditorState.create({ doc });
+    const next = state.apply(state.tr.insertText("c", position, position + 1));
+    expect(serializeEditorDoc(next.doc).value).toBe(source.replace("{a}", "{c}"));
   });
 });
 

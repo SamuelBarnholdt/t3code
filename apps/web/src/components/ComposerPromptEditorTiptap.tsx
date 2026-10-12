@@ -1,11 +1,6 @@
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { Extension, InputRule, Node, wrappingInputRule, type JSONContent } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { ComposerMathExtension } from "~/composer-math";
-import { materializeComposerMath } from "~/composer-rich-text-doc";
-import { ComposerMathNodeView } from "./chat/ComposerMathNodeView";
-import { useClientSettings } from "../hooks/useSettings";
-import { ReplaceStep } from "@tiptap/pm/transform";
 import StarterKit from "@tiptap/starter-kit";
 import { type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { newlineInCode, splitBlockKeepMarks } from "@tiptap/pm/commands";
@@ -792,15 +787,12 @@ const ComposerMarkersExtension = Extension.create({
 type TiptapEditor = NonNullable<ReturnType<typeof useEditor>>;
 
 export function ComposerPromptEditorTiptap(props: ComposerPromptEditorProps) {
-  const enabled = useClientSettings((settings) => settings.mathRenderingEnabled);
-  const math = enabled && !!props.richTextEnabled && !props.literalText;
   // Extensions are creation-time, so changing text mode remounts the editor.
   // Every mode initializes from the controlled value, preserving the draft.
   return (
     <ComposerPromptEditorTiptapInner
-      key={`${props.literalText ? "literal" : props.richTextEnabled ? "rich" : "plain"}:${math}`}
+      key={props.literalText ? "literal" : props.richTextEnabled ? "rich" : "plain"}
       {...props}
-      math={math}
     />
   );
 }
@@ -825,8 +817,7 @@ const ComposerUndoGroupingExtension = Extension.create<
   },
 });
 
-function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { math: boolean }) {
-  const math = props.math;
+function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const {
     value,
     cursor,
@@ -1077,15 +1068,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
         ComposerCitationExtension,
         ComposerContextReferenceExtension,
         ComposerMarkersExtension,
-        ...(math
-          ? [
-              ComposerMathExtension.extend({
-                addNodeView() {
-                  return ReactNodeViewRenderer(ComposerMathNodeView);
-                },
-              }),
-            ]
-          : []),
         ...(richText
           ? [
               ComposerCodeExtension,
@@ -1183,7 +1165,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
             description: shortDescription || found.description?.trim() || null,
           };
         },
-        { styling: richText, literalText, math },
+        { styling: richText, literalText },
       ),
       editable: !disabled,
       editorProps: {
@@ -1464,7 +1446,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
             insertMarkdownParagraphs(
               text,
               skillLabelFor,
-              { styling: richText, blocks: !nested, literalText, literalLength, math },
+              { styling: richText, blocks: !nested, literalText, literalLength },
               (content) => {
                 // Tagged on the same transaction insertContent builds, so the
                 // paste is one undo step of its own.
@@ -1497,25 +1479,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
           return true;
         },
       },
-      onUpdate: ({ editor: updated, transaction }) => {
-        const before = updated.state.selection.$from.parent.textBetween(
-          0,
-          updated.state.selection.$from.parentOffset,
-          undefined,
-          "\uFFFC",
-        );
-        const candidate =
-          math &&
-          transaction.steps.some((step) => {
-            if (!(step instanceof ReplaceStep)) return false;
-            const added = step.slice.content.textBetween(0, step.slice.content.size);
-            return /[$)\]|]/.test(added) || (/\s/.test(added) && /\$\s$/.test(before));
-          });
-        const converted = candidate ? materializeComposerMath(updated.state, skillLabelFor) : null;
-        if (converted) {
-          updated.view.dispatch(converted);
-          return;
-        }
+      onUpdate: ({ editor: updated }) => {
         handleEditorChange(updated);
       },
       onSelectionUpdate: ({ editor: updated }) => {
@@ -1600,7 +1564,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
       citationRequestRef.current?.value === value ? citationRequestRef.current : null;
     if (previousSnapshot.value !== value) {
       editor.commands.setContent(
-        buildDocJson(value, skillLabelFor, { styling: richText, literalText, math }),
+        buildDocJson(value, skillLabelFor, { styling: richText, literalText }),
         {
           emitUpdate: false,
         },
@@ -1639,7 +1603,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
     editor,
     expandEditorCursor,
     literalText,
-    math,
     richText,
     skillLabelFor,
     value,
@@ -1874,13 +1837,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps & { ma
 function insertMarkdownParagraphs(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
-  options: {
-    styling: boolean;
-    blocks?: boolean;
-    literalText?: boolean;
-    literalLength?: number;
-    math?: boolean;
-  },
+  options: { styling: boolean; blocks?: boolean; literalText?: boolean; literalLength?: number },
   insertContent: (content: JSONContent[] | JSONContent) => void,
 ): void {
   const blocks = buildTiptapContent(value, skillLabelFor, options);

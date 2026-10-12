@@ -98,6 +98,7 @@ export function nativeMathRunHtml(
     content = `<span class="equation" data-source="${copy}"${math?.display ? "" : ' tabindex="0" role="group" aria-label="Inline equation"'}>${svg ?? source}</span>`;
     if (math?.display)
       content = `<span class="display"><span class="actions"><button data-copy="${copy}">Copy TeX</button><button data-toggle="source" aria-expanded="false">TeX source</button></span><span class="viewport" tabindex="0" role="region" aria-label="Equation">${content}</span><span class="source" hidden>${source}</span></span>`;
+    else content = `<span class="inline-scroll-shell">${content}</span>`;
   } else if (run.skillName && run.skillLabel) {
     // Match the native skill label while retaining the token for selection copy.
     content = `<span data-copy-source="${escapeHtml(run.text)}"><svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10M7.5 4.5l9 5"/></svg>${escapeHtml(run.skillLabel)}</span>`;

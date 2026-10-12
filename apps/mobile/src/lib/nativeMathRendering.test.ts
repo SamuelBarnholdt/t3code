@@ -60,6 +60,7 @@ function documentRuntime(runs: string[]) {
     document,
     class {
       observe() {}
+      disconnect() {}
     },
   );
   listenerSpy.mockRestore();
@@ -79,6 +80,30 @@ function documentRuntime(runs: string[]) {
 }
 
 describe("offline native math rendering and selection", () => {
+  it("shows an overflow indicator that follows scrolling and hides when content fits", () => {
+    const html = nativeMathRunHtml(
+      { text: "$$x_i$$", mathSource: "$$x_i$$", mathTex: "x_i", mathDisplay: true },
+      style,
+    );
+    const { update } = documentRuntime([html]);
+    const viewport = document.querySelector<HTMLElement>(".viewport")!;
+    let width = 100;
+    Object.defineProperties(viewport, {
+      clientWidth: { get: () => width },
+      scrollWidth: { get: () => 400 },
+    });
+    update([html], 2);
+    const track = document.querySelector<HTMLElement>(".math-scrollbar")!;
+    expect(track.hidden).toBe(false);
+    expect(track.firstElementChild?.getAttribute("style")).toContain("width: 25%");
+    viewport.scrollLeft = 200;
+    viewport.dispatchEvent(new Event("scroll"));
+    expect(track.firstElementChild?.getAttribute("style")).toContain("left: 50%");
+    width = 400;
+    update([html], 3);
+    expect(track.hidden).toBe(true);
+  });
+
   it("renders and copies a whole table with formulas and stable cell boundaries", () => {
     const html = nativeMathTableHtml(
       [
